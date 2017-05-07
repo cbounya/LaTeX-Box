@@ -2,10 +2,12 @@
 
 " Motion options {{{
 " Opening and closing patterns
+let g:openFold = '%{{{'
+let g:closFold = '%}}}'
 if !exists('g:LatexBox_open_pats')
-	let g:LatexBox_open_pats  = [ '\\{','{','\\(','(','\\\[','\[',
+	let g:LatexBox_open_pats  = [ g:openFold, '\\{','{','\\(','(','\\\[','\[',
 				\ '\\begin\s*{.\{-}}', '\\left\s*\%([^\\]\|\\.\|\\\a*\)']
-	let g:LatexBox_close_pats = [ '\\}','}','\\)',')','\\\]','\]',
+	let g:LatexBox_close_pats = [ g:closFold, '\\}','}','\\)',')','\\\]','\]',
 				\ '\\end\s*{.\{-}}',   '\\right\s*\%([^\\]\|\\.\|\\\a*\)']
 endif
 " }}}
@@ -55,32 +57,72 @@ endfunction
 
 " Finding Matching Pair {{{
 function! s:FindMatchingPair(mode)
-
+"{{{
 	if a:mode =~ 'h\|i'
 		2match none
 	elseif a:mode == 'v'
 		normal! gv
 	endif
-
-	if LatexBox_InComment() | return | endif
-
+	"
 	" open/close pairs (dollars signs are treated apart)
 	let dollar_pat = '\$'
 	let notbslash = '\%(\\\@<!\%(\\\\\)*\)\@<='
 	let notcomment = '\%(\%(\\\@<!\%(\\\\\)*\)\@<=%.*\)\@<!'
+	let acomment = '\%(\%(\\\@<!\%(\\\\\)*\)\@<=%.*\)\@<='
+
+  let maRegex = '\(\%#.\+\)\@<!\(' . g:openFold . '\|' . g:closFold . '\)\(.*\%#\)\@!'
+  "execute 'match MatchParen /\%'.lnum.'l' . maRegex .'/'
+
+	if LatexBox_InComment() 
+		let outsideComment = 0
+		let regexComment = acomment
+		let booleanComment = '!(LatexBox_InComment())'
+	else
+		let outsideComment = 1
+		let regexComment = notcomment
+		let booleanComment = 'LatexBox_InComment()'
+	end
+
 	let anymatch =  '\('
 				\ . join(g:LatexBox_open_pats + g:LatexBox_close_pats, '\|')
 				\ . '\|' . dollar_pat . '\)'
 
+"	let BWanymatch = '\('
+"				\ . join(reverse(copy(g:LatexBox_open_pats)) + reverse(copy(g:LatexBox_close_pats)), '\|')
+"				\ . '\|' . dollar_pat . '\)'
 	let lnum = line('.')
-	let cnum = searchpos('\A', 'cbnW', lnum)[1]
-	" if the previous char is a backslash
-	if strpart(getline(lnum), cnum-2, 1) == '\'
-		let cnum = cnum-1
-	endif
-	let delim = matchstr(getline(lnum), '\C^'. anymatch , cnum - 1)
+	"let cnum = match(getline('.'), maRegex) + 1
+	let cnum = searchpos(maRegex, 'cbnW', lnum)[1]
+	if cnum == 0
+	"	if a:mode =~ 'h' "débug
+	"		echo "NoMatch !"
+	"	endif
+		let cnum = searchpos('\A', 'cbnW', lnum)[1] "non alphabetic character left of cursor
 
-	if empty(delim) || strlen(delim)+cnum-1< col('.')
+		"let foldDetect = 0 
+
+		" if the previous char is a backslash
+		if strpart(getline(lnum), cnum-2, 1) == '\'
+			let cnum = cnum-1
+			"	else
+			"		if !outsideComment
+			"			while ((strpart(getline(lnum), cnum-2, 1) == '{') && (strpart(getline(lnum), cnum-1, 1) == '{')) || ((strpart(getline(lnum), cnum-2, 1) == '}') && (strpart(getline(lnum), cnum-1, 1) == '}'))
+			"			"while (strpart(getline(lnum), cnum-2, 1) == '{') && (strpart(getline(lnum), cnum-1, 1) == '{')
+			"				let cnum = cnum-1 
+			"				let foldDetect = 1
+			"			endwhile
+			"		endif 
+		endif
+	"else
+	"	if a:mode =~ 'h' "débug
+	"		echo "Match !"
+	"	endif
+	endif
+	"echo cnum
+	let delim = matchstr(getline(lnum), '\C^'. anymatch , cnum - 1)
+	"echo delim
+
+	if empty(delim) || strlen(delim)+cnum-1< col('.') " no delimiter right of cursor
 		if a:mode =~ 'n\|v\|o'
 			" if not found, search forward
 			let cnum = match(getline(lnum), '\C'. anymatch , col('.') - 1) + 1
@@ -88,7 +130,7 @@ function! s:FindMatchingPair(mode)
 			call cursor(lnum, cnum)
 			let delim = matchstr(getline(lnum), '\C^'. anymatch , cnum - 1)
 		elseif a:mode =~ 'i'
-			" if not found, move one char bacward and search
+			" if not found, move one char backward and search
 			let cnum = searchpos('\A', 'bnW', lnum)[1]
 			" if the previous char is a backslash
 			if strpart(getline(lnum), cnum-2, 1) == '\'
@@ -96,20 +138,23 @@ function! s:FindMatchingPair(mode)
 			endif
 			let delim = matchstr(getline(lnum), '\C^'. anymatch , cnum - 1)
 			if empty(delim) || strlen(delim)+cnum< col('.') | return | endif
-		elseif a:mode =~ 'h'
+		elseif a:mode =~ 'h' "&& !foldDetect
 			return
 		endif
 	endif
+	"if foldDetect && empty(delim) && a:mode =~ 'h'
+	"	return
+	"endif
 
-	if delim =~ '^\$'
+	if delim =~ '^\$' && outsideComment
 
-		" match $-pairs
+		" match $-pairs "relies on vim syntax detection, so has to be apart
 		" check if next character is in inline math
 		let [lnum0, cnum0] = searchpos('.', 'nW')
 		if lnum0 && s:HasSyntax('texMathZoneX', lnum0, cnum0)
-			let [lnum2, cnum2] = searchpos(notcomment . notbslash. dollar_pat, 'nW', line('w$')*(a:mode =~ 'h\|i') , 200)
+			let [lnum2, cnum2] = searchpos(regexComment . notbslash. dollar_pat, 'nW', line('w$')*(a:mode =~ 'h\|i') , 200)
 		else
-			let [lnum2, cnum2] = searchpos('\%(\%'. lnum . 'l\%' . cnum . 'c\)\@!'. notcomment . notbslash . dollar_pat, 'bnW', line('w0')*(a:mode =~ 'h\|i') , 200)
+			let [lnum2, cnum2] = searchpos('\%(\%'. lnum . 'l\%' . cnum . 'c\)\@!'. regexComment . notbslash . dollar_pat, 'bnW', line('w0')*(a:mode =~ 'h\|i') , 200)
 		endif
 
 		if a:mode =~ 'h\|i'
@@ -127,7 +172,7 @@ function! s:FindMatchingPair(mode)
 			if delim =~# '^' . open_pat
 				" if on opening pattern, search for closing pattern
 				let [lnum2, cnum2] = searchpairpos('\C' . open_pat, '', '\C'
-							\ . close_pat, 'nW', 'LatexBox_InComment()',
+							\ . close_pat, 'nW', booleanComment,
 							\ line('w$')*(a:mode =~ 'h\|i') , 200)
 				if a:mode =~ 'h\|i'
 					execute '2match MatchParen /\%(\%' . lnum . 'l\%' . cnum
@@ -146,7 +191,7 @@ function! s:FindMatchingPair(mode)
 				" if on closing pattern, search for opening pattern
 				let [lnum2, cnum2] =  searchpairpos('\C' . open_pat, '',
 							\ '\C\%(\%'. lnum . 'l\%' . cnum . 'c\)\@!'
-							\ . close_pat, 'bnW', 'LatexBox_InComment()',
+							\ . close_pat, 'bnW', booleanComment,
 							\ line('w0')*(a:mode =~ 'h\|i') , 200)
 				if a:mode =~ 'h\|i'
 					execute '2match MatchParen /\%(\%' . lnum2 . 'l\%' . cnum2
@@ -162,6 +207,7 @@ function! s:FindMatchingPair(mode)
 
 	endif
 endfunction
+""}}}
 
 " Allow to disable functionality if desired
 if !exists('g:LatexBox_loaded_matchparen')
@@ -389,9 +435,9 @@ function! LatexBox_TOC(...)
 
 	" Size detection
 	if l:type == l:hori
-	  let l:size = g:LatexBox_split_length
+		let l:size = g:LatexBox_split_length
 	elseif l:type == l:vert
-	  let l:size = g:LatexBox_split_width
+		let l:size = g:LatexBox_split_width
 	endif
 
 	if winnr >= 0
@@ -409,7 +455,7 @@ function! LatexBox_TOC(...)
 	endif
 	" Read TOC
 	let [toc, fileindices] = s:ReadTOC(LatexBox_GetAuxFile(),
-									 \ LatexBox_GetMainTexFile())
+				\ LatexBox_GetMainTexFile())
 	let calling_buf = bufnr('%')
 
 	" Find closest section in current buffer
@@ -541,4 +587,4 @@ command! LatexTOC call LatexBox_TOC()
 command! LatexTOCToggle call LatexBox_TOC(1)
 " }}}
 
-" vim:fdm=marker:ff=unix:noet:ts=4:sw=4
+" vim:fdm=marker:ff=unix:noet:ts=4:sw=4:foldmarker={{{,}}}
