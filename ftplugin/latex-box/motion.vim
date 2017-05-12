@@ -57,7 +57,7 @@ endfunction
 
 " Finding Matching Pair {{{
 function! s:FindMatchingPair(mode)
-"{{{
+"{{{ la fonction
 	if a:mode =~ 'h\|i'
 		2match none
 	elseif a:mode == 'v'
@@ -87,9 +87,6 @@ function! s:FindMatchingPair(mode)
 				\ . join(g:LatexBox_open_pats + g:LatexBox_close_pats, '\|')
 				\ . '\|' . dollar_pat . '\)'
 
-"	let BWanymatch = '\('
-"				\ . join(reverse(copy(g:LatexBox_open_pats)) + reverse(copy(g:LatexBox_close_pats)), '\|')
-"				\ . '\|' . dollar_pat . '\)'
 	let lnum = line('.')
 	"let cnum = match(getline('.'), maRegex) + 1
 	let cnum = searchpos(maRegex, 'cbnW', lnum)[1]

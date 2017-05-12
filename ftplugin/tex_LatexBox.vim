@@ -14,6 +14,8 @@ else
 endif
 
 if !exists('b:LatexBox_loaded')
+" load the plugin sources by looking at the path of this very script as it is
+" being sourced
 
 	let prefix = expand('<sfile>:p:h') . '/latex-box/'
 
